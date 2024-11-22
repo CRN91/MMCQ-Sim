@@ -4,7 +4,7 @@
 #include <math.h>
 #include <float.h>
 
-#define Q_LIMIT 500
+#define Q_LIMIT 100
 #define BUSY 1
 #define IDLE 0
 
@@ -85,12 +85,10 @@ void initialise_sim(void)
 }
 
 /* Update time average stats */
-//TODO REWORK FOR MMC
 void update_time_avg_stats(void)
 {
   // Calculate time since last event and update time last event to current time
   float time_since_last_event = sim_clock - time_last_event; // Delta x in equations
-  //printf("time since last event %f\n",time_since_last_event); 
   time_last_event = sim_clock;
   
   /* Update stats where area_num_in_q is the cumulative area under the graph where the y axis is the number of customers in the queue
@@ -99,7 +97,10 @@ void update_time_avg_stats(void)
   x axis is time. This will allow us to calculate the proportion of server utilisation during the simulation. */
   
   area_num_in_q += num_in_q * time_since_last_event;
-  //area_server_status += server_status * time_since_last_event;
+  for (int i = 0; i < num_servers; i++)
+  {
+	area_server_status += server_status[i] * time_since_last_event;
+  }
 }
 
 /* Calculates performance metrics and writes report to file */
@@ -108,7 +109,7 @@ void write_report(FILE * report)
   // Average delay and size in the queue and server utilisation | sim_clock should be total time at the end of the sim
   float avg_q_delay = total_time_delayed / customers_delayed;
   float avg_q_size = area_num_in_q / sim_clock;
-  float server_utilisation = area_server_status / sim_clock;
+  float server_utilisation = area_server_status / sim_clock / num_servers;
   
   fprintf(report, "\nSimulation stats\nAverage delay in the queue: %0.3f minutes\nAverage queue length: %11.3f customers\nAverage server utilisation: %0.3f%%\nDuration of simulation: %11.3f minutes", avg_q_delay, avg_q_size, server_utilisation*100, sim_clock);
 }
@@ -122,26 +123,61 @@ int timing()
   
   // Normal sim conditions
   if (sim_clock < end_time){
-	  min_time = FLT_MAX - 1;
-	  for (int i = 0; i < (num_servers+2); i++)
+	min_time = FLT_MAX - 1;
+	for (int i = 0; i < (num_servers+2); i++)
+	{
+      printf("event_list[%d]: %f\n",i,event_list[i]);
+	  if (event_list[i] < min_time)
 	  {
-		printf("event_list[%d]: %f\n",i,event_list[i]);
-	    if (event_list[i] < min_time)
-	    {
-	      min_time = event_list[i];
-	      next_event_type = i;
-	    }
+	    min_time = event_list[i];
+	    next_event_type = i;
 	  }
-  // TODO REWORK THIS FOR MMC
+	}
+	// End sim condition met but queue is not empty
+	if (next_event_type == 0){
+	  int processing = 0;
+      for (int i = 0; i < num_servers; i++)
+	  {
+	    if (server_status[i] == BUSY){
+		  processing = 1;
+		  break;
+		}
+	  }
+	  if (processing == 1){
+		min_time = FLT_MAX;
+        for (int i = 2; i < (num_servers+2); i++)
+        {
+		  if (event_list[i] < min_time)
+		  {
+		    min_time = event_list[i];
+			next_event_type = i;
+		  }
+     	}
+      }
+	}
   // No longer accepting new customers
   } else{ 
-	printf("SHOULDNT ENTER HERE");
     // Deplete queue
-    if (time_arrival[0] != -1){
-      next_event_type = 1; // Departure
-      min_time = event_list[1];
+	int processing = 0;
+	for (int i = 0; i < num_servers; i++)
+	{
+	  if (server_status[i] == BUSY){
+	    processing = 1;
+	  	break;
+	  }
+	}
+	if (processing == 1){
+	  min_time = FLT_MAX;
+	  for (int i = 2; i < (num_servers+2); i++)
+	  {
+	    if (event_list[i] < min_time)
+	  	{
+	  	  min_time = event_list[i];
+	  	  next_event_type = i;
+	  	}
+	  }
     } else{ // Empty queue
-      next_event_type = 2; // End sim
+      next_event_type = 0; // End sim
       min_time = sim_clock;
     }
   }
@@ -273,7 +309,7 @@ int main(void)
   fclose(config);
   
   // Write heading of report
-  fprintf(report, "Single Server Queueing System Simulation Report\n\nInput parameters\nMean interarrival time: %12f minutes\nMean service time: %17f minutes\nStop accepting arrivals at: %f minutes\n",mean_interarrival, mean_service, end_time);
+  fprintf(report, "Multiple Server Queueing System Simulation Report\n\nInput parameters\nNumber of servers: %10d servers\nMean interarrival time: %12f minutes\nMean service time: %17f minutes\nStop accepting arrivals at: %f minutes\n",num_servers, mean_interarrival, mean_service, end_time);
   
   // Initialise sim
   initialise_sim();
@@ -292,6 +328,8 @@ int main(void)
     
     // Call correct event function
     switch (event_type){
+      case 0: // end time
+    	break;
       case 1: // arrival
         arrive(event_type);
         break;
@@ -300,7 +338,7 @@ int main(void)
         break;
     }
   } while (event_type != 0);
-  
+  printf("final time: %f",sim_clock);
   // Call the report writing function
   write_report(report);
   fclose(report);
