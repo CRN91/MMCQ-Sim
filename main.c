@@ -4,21 +4,21 @@
 #include <math.h>
 #include <float.h>
 
-#define Q_LIMIT 100
+#define Q_LIMIT 500
 #define BUSY 1
 #define IDLE 0
 
 float mean_interarrival, mean_service, uniform_rand, sim_clock, time_last_event, total_time_delayed, area_num_in_q, area_server_status, time_arrival[Q_LIMIT+1], end_time;
 int delays_required, num_in_q, customers_delayed, event_type, num_servers;
 int *server_status;
-float event_list[3] = {0};
-float *event_list_ptr = event_list;
+float *event_list;
 
-void arrive(void);
-void depart(void);
+void arrive(int);
+void depart(int);
 void update_time_avg_stats(void);
 void write_report(FILE *);
 int timing(void);
+int find_idle_server(void);
 float gen_rand_uniform(void);
 float gen_rand_exponential(float);
 
@@ -34,10 +34,31 @@ void initialise_sim(void)
   time_last_event = 0;
   
   // Allocate memory for the server status array
-  server_status = malloc(num_servers * sizeof(int));
+  server_status = (int* )malloc(num_servers * sizeof(int));
   if (server_status == NULL) {
 	  perror("Error allocating memory");
-	  exit(EXIT_FAILURE);
+	  exit(1);
+  }
+
+  // Initialise all servers to be idle
+  for (int i = 0; i < num_servers; i++) {
+    server_status[i] = IDLE;
+  }
+
+  // Allocate memory for the event list array
+  event_list = (float*)malloc((num_servers + 2) * sizeof(int));
+  if (event_list == NULL) {
+  	perror("Error allocating memory");
+  	exit(1);
+  }
+
+  // Initialise event list end and arrival
+  *event_list = end_time;
+  *(event_list + 1) = gen_rand_exponential(mean_interarrival);
+
+  // Initialise all departure times
+  for (int i = 2; i < num_servers + 2; i++){
+    *(event_list + i) = FLT_MAX;
   }
 
   // Initialise all servers to be idle
@@ -52,9 +73,7 @@ void initialise_sim(void)
   area_server_status = 0.0;
   
   // Initialise event list
-  *event_list_ptr = gen_rand_exponential(mean_interarrival);
-  *(event_list_ptr + 1) = FLT_MAX;
-  *(event_list_ptr + 2) = end_time;
+
   
   // Set all values in queue to -1
   for (int i = 0; i < Q_LIMIT; i++)
@@ -66,6 +85,7 @@ void initialise_sim(void)
 }
 
 /* Update time average stats */
+//TODO REWORK FOR MMC
 void update_time_avg_stats(void)
 {
   // Calculate time since last event and update time last event to current time
@@ -79,7 +99,7 @@ void update_time_avg_stats(void)
   x axis is time. This will allow us to calculate the proportion of server utilisation during the simulation. */
   
   area_num_in_q += num_in_q * time_since_last_event;
-  area_server_status += server_status * time_since_last_event;
+  //area_server_status += server_status * time_since_last_event;
 }
 
 /* Calculates performance metrics and writes report to file */
@@ -111,6 +131,7 @@ int timing()
 	      next_event_type = i;
 	    }
 	  }
+  // TODO REWORK THIS FOR MMC
   // No longer accepting new customers
   } else{ 
     // Deplete queue
@@ -130,16 +151,33 @@ int timing()
   return next_event_type;
 }
 
-/* Next departure event */
-void depart()
+int find_idle_server()
 {
+  // Not found return -1
+  int idle_server = -1;
+
+  for (int i = 0; i < num_servers; i++){
+    if (server_status[i] == IDLE){
+      idle_server = i;
+      break;
+    }
+  }
+  return idle_server;
+}
+
+/* Next departure event */
+void depart(int server_index)
+{
+  // Decrease index by 2 to account for end time and arrival
+  server_index -= 2;
+
   // If queue is empty
   if (time_arrival[0] == -1){ 
     // Make server idle
-    server_status = IDLE;
+    server_status[server_index] = IDLE;
     
     // Remove departure from consideration
-    *(event_list_ptr + 1) = FLT_MAX;
+    *(event_list + server_index) = FLT_MAX;
   } else{
     // Reduce the queue by 1
     num_in_q--;
@@ -149,7 +187,7 @@ void depart()
     customers_delayed++;
     
     // Schedule departure event
-    *(event_list_ptr + 1) = sim_clock + gen_rand_exponential(mean_service);
+    *(event_list + server_index) = sim_clock + gen_rand_exponential(mean_service);
     
     // Move other customers in the queue up one place
     for (int i = 0; i < num_in_q; i++)
@@ -161,20 +199,26 @@ void depart()
 }
 
 /* Next arrival event */
-void arrive()
+void arrive(int server_index)
 { 
+  // Decrease index by 2 to account for end time and arrival
+  server_index -= 2;
+
   // Schedule next arrival
-  *(event_list_ptr) = sim_clock + gen_rand_exponential(mean_interarrival);
+  *(event_list + 1) = sim_clock + gen_rand_exponential(mean_interarrival);
   
-  if (server_status == IDLE){
+  // Find an idle server
+  int idle_server = find_idle_server();
+
+  if (idle_server != -1){
     // Add 1 to customers delayed but don't add any time delayed as they are served instantly
     customers_delayed++;
   
     // Make server busy
-    server_status = BUSY;
+    *(server_status + idle_server) = BUSY;
     
     // Schedule departure event for current customer
-    *(event_list_ptr + 1) = sim_clock + gen_rand_exponential(mean_service);
+    *(event_list + server_index) = sim_clock + gen_rand_exponential(mean_service);
   } else {
     // Stop simulation if queue is full
     if (num_in_q > Q_LIMIT){
@@ -228,8 +272,6 @@ int main(void)
   
   // Initialise sim
   initialise_sim();
-  
-  printf("len of array\nexpected: %d\nactual: %llu\n",num_servers, sizeof(*server_status)/sizeof(server_status[0]));
 
   // Simulation Loop
   do {
@@ -243,17 +285,14 @@ int main(void)
     
     // Call correct event function
     switch (event_type){
-      case 0: // arrival
-        arrive();
+      case 0: // end_time
         break;
-      case 1: // departure
-        depart();
-        break;
-      case 2: // end_time
+      case 1: // arrival
+        arrive(event_type);
         break;
       default:
-        printf("Error! Event type incorrect.");
-        exit(1);
+        depart(event_type);
+        break;
     }
   } while (event_type != 2);
   
