@@ -9,7 +9,8 @@
 #define IDLE 0
 
 float mean_interarrival, mean_service, uniform_rand, sim_clock, time_last_event, total_time_delayed, area_num_in_q, area_server_status, time_arrival[Q_LIMIT+1], end_time;
-int delays_required, num_in_q, server_status, customers_delayed, event_type;
+int delays_required, num_in_q, customers_delayed, event_type, num_servers;
+int *server_status;
 float event_list[3] = {0};
 float *event_list_ptr = event_list;
 
@@ -31,8 +32,19 @@ void initialise_sim(void)
   sim_clock = 0.0;
   num_in_q = 0;
   time_last_event = 0;
-  server_status = IDLE;
   
+  // Allocate memory for the server status array
+  server_status = malloc(num_servers * sizeof(int));
+  if (server_status == NULL) {
+	  perror("Error allocating memory");
+	  exit(EXIT_FAILURE);
+  }
+
+  // Initialise all servers to be idle
+  for (int i = 0; i < num_servers; i++) {
+    server_status[i] = IDLE;
+  }
+
   // Initialise Statistical Counters
   customers_delayed = 0;
   total_time_delayed = 0.0;
@@ -208,7 +220,7 @@ int main(void)
   }  
   
   // Load input parameters
-  fscanf(config, "%f %f %f", &mean_interarrival, &mean_service, &end_time);
+  fscanf(config, "%f %f %f %d", &mean_interarrival, &mean_service, &end_time, &num_servers);
   fclose(config);
   
   // Write heading of report
@@ -217,6 +229,8 @@ int main(void)
   // Initialise sim
   initialise_sim();
   
+  printf("len of array\nexpected: %d\nactual: %llu\n",num_servers, sizeof(*server_status)/sizeof(server_status[0]));
+
   // Simulation Loop
   do {
     // Timing event to determine next event
