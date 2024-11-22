@@ -19,6 +19,7 @@ void update_time_avg_stats(void);
 void write_report(FILE *);
 int timing(void);
 int find_idle_server(void);
+int still_processing(void);
 float gen_rand_uniform(void);
 float gen_rand_exponential(float);
 
@@ -85,7 +86,7 @@ void initialise_sim(void)
 }
 
 /* Update time average stats */
-void update_time_avg_stats(void)
+void update_time_avg_stats()
 {
   // Calculate time since last event and update time last event to current time
   float time_since_last_event = sim_clock - time_last_event; // Delta x in equations
@@ -114,79 +115,62 @@ void write_report(FILE * report)
   fprintf(report, "\nSimulation stats\nAverage delay in the queue: %0.3f minutes\nAverage queue length: %11.3f customers\nAverage server utilisation: %0.3f%%\nDuration of simulation: %11.3f minutes", avg_q_delay, avg_q_size, server_utilisation*100, sim_clock);
 }
 
+/* Returns 1 if at least 1 server is busy and 0 if all servers are idle */
+int still_processing()
+{
+  int processing = 0;
+  for (int i = 0; i < num_servers; i++)
+  {
+	if (server_status[i] == BUSY){
+	  processing = 1;
+	  break;
+	}
+  }
+  return processing;
+}
+
 /* Determine next event and advance sim clock */
 int timing()
 {
   // Determine next event
   int next_event_type = 0;
+  int processing = 1;
   float min_time;
   
-  // Normal sim conditions
-  if (sim_clock < end_time){
-	min_time = FLT_MAX - 1;
-	for (int i = 0; i < (num_servers+2); i++)
-	{
-      printf("event_list[%d]: %f\n",i,event_list[i]);
-	  if (event_list[i] < min_time)
+  // Prevents new arrivals past the simulation closing time
+  if (event_list[1] < end_time){
+	min_time = event_list[1];
+	next_event_type = 1;
+  } else{
+	min_time = FLT_MAX-1;
+	processing = still_processing();
+  }
+
+  // Allows the simulation to continue running until all customers have departed
+  if (processing == 1){
+    // Iterates through servers to find if a departure is the most imminent event
+    for (int i = 2; i < (num_servers+2); i++)
+    {
+      if (event_list[i] < min_time)
 	  {
 	    min_time = event_list[i];
 	    next_event_type = i;
 	  }
-	}
-	// End sim condition met but queue is not empty
-	if (next_event_type == 0){
-	  int processing = 0;
-      for (int i = 0; i < num_servers; i++)
-	  {
-	    if (server_status[i] == BUSY){
-		  processing = 1;
-		  break;
-		}
-	  }
-	  if (processing == 1){
-		min_time = FLT_MAX;
-        for (int i = 2; i < (num_servers+2); i++)
-        {
-		  if (event_list[i] < min_time)
-		  {
-		    min_time = event_list[i];
-			next_event_type = i;
-		  }
-     	}
-      }
-	}
-  // No longer accepting new customers
-  } else{ 
-    // Deplete queue
-	int processing = 0;
-	for (int i = 0; i < num_servers; i++)
-	{
-	  if (server_status[i] == BUSY){
-	    processing = 1;
-	  	break;
-	  }
-	}
-	if (processing == 1){
-	  min_time = FLT_MAX;
-	  for (int i = 2; i < (num_servers+2); i++)
-	  {
-	    if (event_list[i] < min_time)
-	  	{
-	  	  min_time = event_list[i];
-	  	  next_event_type = i;
-	  	}
-	  }
-    } else{ // Empty queue
-      next_event_type = 0; // End sim
-      min_time = sim_clock;
     }
+  } else { // Simulation complete
+	// Set time to end duration if less
+	if (sim_clock < end_time){
+		min_time = end_time;
+	} else{
+	  min_time = sim_clock;
+	}
+	next_event_type = 0;
   }
   
   // Advance sim clock
   sim_clock = min_time;
   
   // 0 for end time condition, 1 for arrival, 2... for departure index
-  printf("\nnext event type: %d\n\n", next_event_type);
   return next_event_type;
 }
 
@@ -209,8 +193,8 @@ void depart(int server_index)
 {
   // Decrease index by 2 to account for end time and arrival
   server_index -= 2;
-  printf("server_index: %d\n",server_index);
-  printf("queue 0: %f\n", time_arrival[0]);
+  //printf("server_index: %d\n",server_index);
+  //printf("queue 0: %f\n", time_arrival[0]);
 
   // If queue is empty
   if (time_arrival[0] == -1){ 
@@ -316,8 +300,8 @@ int main(void)
 
   // Simulation Loop
   do {
-	printf("num in q: %d\n", num_in_q);
-	printf("sim clock: %f\n\n",sim_clock);
+	//printf("num in q: %d\n", num_in_q);
+	//printf("sim clock: %f\n\n",sim_clock);
     // Timing event to determine next event
     event_type = timing();
     
@@ -338,7 +322,7 @@ int main(void)
         break;
     }
   } while (event_type != 0);
-  printf("final time: %f",sim_clock);
+  //printf("final time: %f",sim_clock);
   // Call the report writing function
   write_report(report);
   fclose(report);

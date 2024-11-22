@@ -7,7 +7,7 @@ Mean service time:          0.500000 minutes
 Stop accepting arrivals at: 480.000000 minutes
 
 Simulation stats
-Average delay in the queue: 0.032 minutes
-Average queue length:       0.031 customers
-Average server utilisation: 23.793%
-Duration of simulation:     480.000 minutes
+Average delay in the queue: 0.035 minutes
+Average queue length:       0.036 customers
+Average server utilisation: 25.553%
+Duration of simulation:     480.401 minutes
